@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>2AFC test</title>
+    <style>
+        body { 
+            background: #1a1a1a; color: #e8eaed; 
+            font-family: 'Segoe UI', Tahoma, sans-serif; 
+            margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh;
+            user-select: none;
+        }
+
+        #debug-info {
+            position: fixed; top: 10px; right: 10px;
+            background: rgba(0, 0, 0, 0.4); border: 1px solid #3c4043;
+            padding: 8px 12px; border-radius: 6px;
+            font-size: 12px; color: #9aa0a6; font-family: monospace;
+            z-index: 1000;
+        }
+
+        .container { max-width: 800px; text-align: center; padding: 40px; background: #242424; border-radius: 12px; }
+        
+        h1 { font-size: 28px; margin-bottom: 25px; color: #fff; }
+        .instruction-box { font-size: 19px; line-height: 1.6; color: #bdc1c6; text-align: center; margin-bottom: 30px; }
+        .highlight { color: #8ab4f8; font-weight: bold; }
+
+        .circle {
+            position: absolute; width: 22vw; height: 22vw;
+            background: #f1f3f4; border-radius: 50%; display: none;
+            top: 50%; transform: translateY(-50%);
+        }
+        #left { left: 18%; }
+        #right { right: 18%; }
+
+        .btn-group { display: flex; justify-content: center; gap: 20px; }
+        
+        .btn {
+            padding: 22px 35px; font-size: 20px; font-weight: bold;
+            border-radius: 8px; cursor: pointer; transition: 0.2s; border: 3px solid transparent;
+        }
+
+        .btn-start { background: #8ab4f8; color: #202124; border: none; width: 100%; font-size: 24px; }
+        
+        .btn-choice { background: #303134; flex: 1; }
+        .btn-sim { color: #81c995; border-color: #81c995; }
+        .btn-seq { color: #f28b82; border-color: #f28b82; }
+        
+        .btn:hover { opacity: 0.8; transform: scale(1.02); }
+
+       #ui, #start-screen, #id-screen { display: none; }
+        #progress { position: fixed; bottom: 20px; color: #5f6368; font-size: 14px; }
+
+        /* Style dla nowego okna ID */
+        .input-field { width: 80%; padding: 15px; margin: 20px 0; border-radius: 8px; border: 2px solid #3c4043; background: #1a1a1a; color: #fff; font-size: 20px; text-align: center; }
+        .checkbox-container { margin-bottom: 20px; font-size: 16px; color: #9aa0a6; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; }
+    
+#fixation-cross {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 40px; /* Nieco większy, by był wyraźny */
+    color: #40444b; /* Ciemniejszy szary, żeby nie oślepiał */
+    z-index: 100;
+    display: none; /* Ukryty na starcie */
+    pointer-events: none;
+}
+
+</style>
+</head>
+<body>
+
+<div id="debug-info">Monitor: wykrywanie...</div>
+
+<div id="lang-screen" class="container">
+    <h1>Wybierz język / Select Language</h1>
+    <div class="btn-group">
+        <button class="btn btn-choice" style="color: #8ab4f8; border-color: #8ab4f8;" onclick="setLanguage('pl')">Polski</button>
+        <button class="btn btn-choice" style="color: #8ab4f8; border-color: #8ab4f8;" onclick="setLanguage('en')">English</button>
+    </div>
+</div>
+
+<div id="id-screen" class="container">
+    <h1>Dane badanego</h1>
+    <input type="text" id="patient-id" class="input-field" placeholder="Wpisz ID pacjenta">
+    <label class="checkbox-container">
+        <input type="checkbox" id="db-save" checked> Zapisz wynik w bazie danych
+    </label>
+    <button class="btn btn-start" onclick="submitID()">DALEJ</button>
+</div>
+
+<div id="start-screen" class="container">
+    <h1>Instrukcja</h1><br>
+    <div class="instruction-box">
+        <p>Postaraj się maksymalnie <span class="highlight">skupić na ekranie</span>.</p>
+        <p>W trakcie badania na ekranie będą pojawiały się dwa kółka. Twoim zadaniem jest ocenić, czy kółka mignęły naraz, czy jedno po drugim. Po każdym mignięciu <span class="highlight">zaznacz odpowiedni przycisk</span>.</p>
+        <p>Badanie trwa około 3 minuty. Gdy będziesz gotowy/gotowa, naciśnij przycisk poniżej aby rozpocząć badanie.</p>
+    </div>
+    <button class="btn btn-start" onclick="startExperiment()">ROZPOCZNIJ TEST</button>
+</div>
+
+<div id="ui" class="container">
+    <h1>Czy kółka mignęły jednocześnie, czy jedno po drugim?</h1></br>
+    <div class="btn-group">
+        <button class="btn btn-choice btn-sim" onclick="recordResponse('Jednoczesne')">Jednocześnie</button>
+        <button class="btn btn-choice btn-seq" onclick="recordResponse('Sekwencyjne')">Jedno po drugim</button>
+    </div>
+</div>
+
+<div id="end-screen" class="container" style="display:none;">
+    <div id="end-text"></div>
+</div>
+<div id="fixation-cross">+</div>
+
+<div id="left" class="circle"></div>
+<div id="right" class="circle"></div>
+<div id="progress"></div>
+<div id="left" class="circle"></div>
+<div id="right" class="circle"></div>
+<div id="progress"></div>
+
+<script>
+
+const translations = {
+    pl: {
+        titleID: "Dane badanego",
+        placeholderID: "Wpisz ID pacjenta",
+	alertID: "Proszę podać ID pacjenta.",
+        dbSave: "Zapisz wynik w bazie danych",
+        btnNext: "DALEJ",
+        instrTitle: "Instrukcja",
+        instrText: `<p>Postaraj się maksymalnie <span class="highlight">skupić na ekranie</span>.</p>
+                    <p>W trakcie badania na ekranie będą pojawiały się dwa kółka. Twoim zadaniem jest ocenić, czy kółka mignęły naraz, czy jedno po drugim. Po każdym mignięciu <span class="highlight">zaznacz odpowiedni przycisk</span>.</p>
+                    <p>Badanie trwa około 3 minuty. Gdy będziesz gotowy/gotowa, naciśnij przycisk poniżej aby rozpocząć badanie.</p>`,
+        btnStart: "ROZPOCZNIJ TEST",
+        question: "Czy kółka mignęły jednocześnie, czy jedno po drugim?",
+        btnSim: "Jednocześnie",
+        btnSeq: "Jedno po drugim",
+        progress: "Pozostało",
+        endTitle: "Badanie zakończone",
+        saving: "Trwa zapisywanie...",
+        saved: "Odpowiedzi zostały zapisane.",
+        notSaved: "Odpowiedzi nie zostały zapisane."
+    },
+    en: {
+        titleID: "Subject Data",
+        placeholderID: "Enter patient ID",
+	alertID: "Please enter patient ID.",
+        dbSave: "Save results to database",
+        btnNext: "NEXT",
+        instrTitle: "Instructions",
+        instrText: `<p>Try to <span class="highlight">focus on the screen</span> as much as possible.</p>
+                    <p>During the test, two circles will appear. Your task is to judge if they flashed simultaneously or one after another. After each flash, <span class="highlight">select the appropriate button</span>.</p>
+                    <p>The test takes about 3 minutes. When you are ready, press the button below to start.</p>`,
+        btnStart: "START TEST",
+        question: "Did the circles flash simultaneously or one after another?",
+        btnSim: "Simultaneously",
+        btnSeq: "One after another",
+        progress: "Remaining",
+        endTitle: "Test Completed",
+        saving: "Saving data...",
+        saved: "Responses have been saved.",
+        notSaved: "Responses were not saved."
+    }
+};
+
+let currentLang = 'pl';
+
+function setLanguage(lang) {
+    currentLang = lang;
+    const t = translations[lang];
+
+    // Podmiana tekstów w HTML
+    document.querySelector('#id-screen h1').innerText = t.titleID;
+    document.getElementById('patient-id').placeholder = t.placeholderID;
+    document.querySelector('.checkbox-container').childNodes[2].textContent = " " + t.dbSave;
+    document.querySelector('#id-screen .btn-start').innerText = t.btnNext;
+    
+    document.querySelector('#start-screen h1').innerText = t.instrTitle;
+    document.querySelector('#start-screen .instruction-box').innerHTML = t.instrText;
+    document.querySelector('#start-screen .btn-start').innerText = t.btnStart;
+    
+    document.querySelector('#ui h1').innerText = t.question;
+    document.querySelector('.btn-choice.btn-sim').innerText = t.btnSim;
+    document.querySelector('.btn-choice.btn-seq').innerText = t.btnSeq;
+
+    // Przejście do ekranu ID
+    document.getElementById('lang-screen').style.display = 'none';
+    document.getElementById('id-screen').style.display = 'block';
+}
+
+    const scriptURL = 'https://script.google.com/macros/s/AKfycbxGpHPWs8KRuqnRSDoEqAdm4F9Xgs2YNvOy9j6pJl8J5Zzp32TSuH5g1it7-Rl9E_so/exec'; 
+    let trials = [], sessionQueue = [], refreshRate = 60, currentTrial = null;
+    const frameOptions = [0, 1, 2, 3, 4, 5], repeats = 5;
+    
+    let patientID = "";
+    let shouldSave = true;
+
+    (function measureHz() {
+        let start = null, f = 0;
+        const check = t => {
+            if (!start) start = t; f++;
+            if (t - start < 500) requestAnimationFrame(check);
+            else {
+                refreshRate = Math.round(f * 2);
+                document.getElementById('debug-info').innerText = `Monitor: ${refreshRate} Hz`;
+            }
+        };
+        requestAnimationFrame(check);
+    })();
+
+    function submitID() {
+    patientID = document.getElementById('patient-id').value.trim();
+    shouldSave = document.getElementById('db-save').checked;
+    
+    // Pobieramy tłumaczenie dla aktualnego języka
+    const t = translations[currentLang];
+
+    if (patientID === "") {
+        alert(t.alertID); // Wyświetlamy tekst ze słownika
+        return;
+    }
+    
+    document.getElementById('id-screen').style.display = 'none';
+    document.getElementById('start-screen').style.display = 'block';
+}
+
+    function startExperiment() {
+    // Twoja nowa konfiguracja 5 i 15
+    const distribution = {
+        0: 5,
+        1: 15,
+        2: 15,
+        3: 15,
+        4: 15,
+        5: 5
+    };
+
+    sessionQueue = [];
+    for (let frames in distribution) {
+        for (let i = 0; i < distribution[frames]; i++) {
+            sessionQueue.push(parseInt(frames));
+        }
+    }
+
+    // Porządne przemieszanie kolejności
+    sessionQueue.sort(() => Math.random() - 0.5);
+    
+    // Zapisujemy łączną liczbę do licznika postępu
+    window.totalTrialsCount = sessionQueue.length; 
+
+    document.getElementById('start-screen').style.display = 'none';
+    nextTrial();
+}
+
+function nextTrial() {
+    if (sessionQueue.length === 0) return finish();
+document.getElementById('fixation-cross').style.display = 'block';
+    const delay = sessionQueue.pop();
+    const leftFirst = Math.random() > 0.5;
+    
+    currentTrial = { 
+        frames: delay, 
+        order: leftFirst ? 'L-P' : 'P-L', 
+        ms: (delay * (1000/refreshRate)).toFixed(1) 
+    };
+
+    // Aktualizacja licznika: teraz będzie pokazywać np. "Pozostało: 70 / 70"
+    const currentCount = sessionQueue.length + 1;
+const t = translations[currentLang];
+document.getElementById('progress').innerText = `${t.progress}: ${currentCount} / ${window.totalTrialsCount}`;
+    
+    setTimeout(() => animate(delay, leftFirst), 1200);
+}
+
+    function animate(delay, leftFirst) {
+        let f = 0;
+        const flashDuration = 10; // Czas świecenia każdego kółka
+        const c1 = document.getElementById(leftFirst ? 'left' : 'right');
+        const c2 = document.getElementById(leftFirst ? 'right' : 'left');
+
+        // Upewnij się, że na starcie są schowane
+        c1.style.display = 'none';
+        c2.style.display = 'none';
+
+        function step() {
+            // Pierwsze kółko: klatki od 0 do 9
+            if (f >= 0 && f < flashDuration) {
+                c1.style.display = 'block';
+            } else {
+                c1.style.display = 'none';
+            }
+
+            // Drugie kółko: klatki od 'delay' do 'delay + flashDuration - 1'
+            if (f >= delay && f < delay + flashDuration) {
+                c2.style.display = 'block';
+            } else {
+                c2.style.display = 'none';
+            }
+
+            // Limit trwania animacji
+            if (f < delay + flashDuration + 5) {
+                f++;
+                requestAnimationFrame(step);
+            } else {
+                c1.style.display = 'none';
+                c2.style.display = 'none';
+                document.getElementById('fixation-cross').style.display = 'none';
+document.getElementById('ui').style.display = 'block';
+            }
+        }
+        requestAnimationFrame(step);
+    }
+
+    function recordResponse(ans) {
+        document.getElementById('ui').style.display = 'none';
+        trials.push({ ...currentTrial, response: ans });
+        nextTrial();
+    }
+
+    async function finish() {
+    const endScreen = document.getElementById('end-screen');
+    const endText = document.getElementById('end-text');
+    const t = translations[currentLang]; // Pobieramy tłumaczenie
+    
+    endScreen.style.display = 'block';
+
+    const data = { 
+        hz: refreshRate, 
+        date: new Date().toLocaleString(), 
+        patient: patientID,
+        lang: currentLang, // Dodajemy info o języku do bazy
+        dbSave: shouldSave,
+        trials: trials 
+    };
+
+    if (shouldSave) {
+        fetch(scriptURL, { 
+            method: 'POST', 
+            mode: 'no-cors', 
+            body: JSON.stringify(data) 
+        });
+
+        endText.innerHTML = `<h1>${t.endTitle}</h1>
+                             <p>${t.saved}</p>
+                             <p>ID: <span class="highlight">${patientID}</span></p>`;
+    } else {
+        endText.innerHTML = `<h1>${t.endTitle}</h1>
+                             <p>${t.notSaved}</p>
+                             <p>ID: <span class="highlight">${patientID}</span></p>`;
+    }
+}
+</script>
+</body>
+</html>
